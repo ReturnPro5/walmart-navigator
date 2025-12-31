@@ -3,6 +3,8 @@ import { Upload, FileSpreadsheet, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { parseUpload } from '@/utils/parseUpload';
 import { useWalmartData } from '@/context/WalmartDataContext';
+console.log('DASHBOARD UploadPanel loaded');
+
 
 export function UploadPanel() {
   const fileRef = useRef<HTMLInputElement | null>(null);
