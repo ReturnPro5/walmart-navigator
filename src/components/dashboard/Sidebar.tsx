@@ -6,7 +6,6 @@ import {
   Clock, 
   TrendingUp, 
   Search,
-  Upload,
   Settings,
   ChevronLeft,
   ChevronRight
@@ -78,11 +77,7 @@ export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
 
       {/* Bottom Actions */}
       <div className="px-2 py-4 border-t border-sidebar-border space-y-1">
-        <button className="nav-link nav-link-inactive w-full" title={collapsed ? "Upload Data" : undefined}>
-          <Upload className="w-5 h-5" />
-          {!collapsed && <span>Upload Data</span>}
-        </button>
-        <button className="nav-link nav-link-inactive w-full" title={collapsed ? "Settings" : undefined}>
+        <button className="nav-link nav-link-inactive w-full">
           <Settings className="w-5 h-5" />
           {!collapsed && <span>Settings</span>}
         </button>
