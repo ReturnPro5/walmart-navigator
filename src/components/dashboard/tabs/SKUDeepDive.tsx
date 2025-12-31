@@ -28,8 +28,9 @@ export function SKUDeepDive({ rows }: SKUDeepDiveProps) {
   const handleSearch = () => {
     const q = searchQuery.toLowerCase();
     const found = rows.find(r =>
-      r.UPC?.includes(q) ||
+      r.UPC?.toLowerCase().includes(q) ||
       r.TRGID?.toLowerCase().includes(q) ||
+      r.ItemID?.toLowerCase().includes(q) ||
       r.Title?.toLowerCase().includes(q)
     );
     if (found) setSelected(found);
@@ -64,15 +65,15 @@ export function SKUDeepDive({ rows }: SKUDeepDiveProps) {
 
           <div className="flex flex-wrap gap-2 mt-4">
             <span className="text-xs text-muted-foreground">Quick select:</span>
-            {quickSelect.map(r => (
+            {quickSelect.map((r, i) => (
               <Button
-                key={r.TRGID}
+                key={r.TRGID || r.ItemID || r.UPC || i}
                 size="sm"
                 variant="outline"
                 onClick={() => setSelected(r)}
                 className="text-xs"
               >
-                {r.TRGID}
+                {r.TRGID || r.ItemID || r.UPC || `Item ${i + 1}`}
               </Button>
             ))}
           </div>
@@ -106,8 +107,8 @@ export function SKUDeepDive({ rows }: SKUDeepDiveProps) {
   const timeline = [
     {
       label: 'Checked In',
-      date: selected.CheckedInOn,
-      complete: true,
+      date: selected.CheckedInOn || null,
+      complete: !!selected.CheckedInOn,
     },
     {
       label: 'Ops Complete',
@@ -156,11 +157,12 @@ export function SKUDeepDive({ rows }: SKUDeepDiveProps) {
               </span>
             </div>
 
-            <h2 className="text-xl font-bold mb-1">{selected.Title}</h2>
+            <h2 className="text-xl font-bold mb-1">{selected.Title || 'Untitled Item'}</h2>
             <div className="flex items-center gap-4 text-sm text-muted-foreground">
-              <span className="font-mono">TRG: {selected.TRGID}</span>
-              <span>UPC: {selected.UPC}</span>
-              <span>Category: {selected.CategoryName}</span>
+              {selected.TRGID && <span className="font-mono">TRG: {selected.TRGID}</span>}
+              {selected.ItemID && <span className="font-mono">Item ID: {selected.ItemID}</span>}
+              {selected.UPC && <span>UPC: {selected.UPC}</span>}
+              {selected.CategoryName && <span>Category: {selected.CategoryName}</span>}
             </div>
           </div>
         </div>

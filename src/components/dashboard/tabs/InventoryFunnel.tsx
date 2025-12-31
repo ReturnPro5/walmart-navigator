@@ -27,22 +27,22 @@ export function InventoryFunnel({ rows }: InventoryFunnelProps) {
     {
       stage: 'Processing',
       count: processing,
-      percentage: checkedIn ? ((processing / checkedIn) * 100).toFixed(1) : 0,
+      percentage: checkedIn ? Number(((processing / checkedIn) * 100).toFixed(1)) : 0,
     },
     {
       stage: 'Ops Complete',
       count: opsComplete,
-      percentage: checkedIn ? ((opsComplete / checkedIn) * 100).toFixed(1) : 0,
+      percentage: checkedIn ? Number(((opsComplete / checkedIn) * 100).toFixed(1)) : 0,
     },
     {
       stage: 'Available for Sale',
       count: availableForSale,
-      percentage: checkedIn ? ((availableForSale / checkedIn) * 100).toFixed(1) : 0,
+      percentage: checkedIn ? Number(((availableForSale / checkedIn) * 100).toFixed(1)) : 0,
     },
     {
       stage: 'Blocked',
       count: blocked,
-      percentage: checkedIn ? ((blocked / checkedIn) * 100).toFixed(1) : 0,
+      percentage: checkedIn ? Number(((blocked / checkedIn) * 100).toFixed(1)) : 0,
     },
   ];
 

@@ -1,21 +1,24 @@
 import { useState } from 'react';
 import { ChevronUp, ChevronDown, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import type { InventoryItem } from '@/lib/mockData';
+import { WalmartListingRow } from '@/types/walmart';
+import { getInventoryStatus } from '@/utils/status';
+import { getRiskBucket } from '@/utils/risk';
 
 interface DataTableProps {
-  data: InventoryItem[];
+  data: WalmartListingRow[];
   title?: string;
-  onRowClick?: (item: InventoryItem) => void;
+  onRowClick?: (item: WalmartListingRow) => void;
 }
 
+type SortField = 'UPC' | 'Title' | 'CategoryName' | 'Condition' | 'FacilityName' | 'QuantityOnHand' | 'AgingDays' | 'status' | 'risk';
+
 export function DataTable({ data, title, onRowClick }: DataTableProps) {
-  const [sortField, setSortField] = useState<keyof InventoryItem>('agingDays');
+  const [sortField, setSortField] = useState<SortField>('AgingDays');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
-  const handleSort = (field: keyof InventoryItem) => {
+  const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
     } else {
@@ -24,9 +27,34 @@ export function DataTable({ data, title, onRowClick }: DataTableProps) {
     }
   };
 
+  const getSortValue = (row: WalmartListingRow, field: SortField): string | number => {
+    switch (field) {
+      case 'status':
+        return getInventoryStatus(row);
+      case 'risk':
+        return getRiskBucket(row);
+      case 'UPC':
+        return row.UPC || '';
+      case 'Title':
+        return row.Title || '';
+      case 'CategoryName':
+        return row.CategoryName || '';
+      case 'Condition':
+        return row.Condition || '';
+      case 'FacilityName':
+        return row.FacilityName || '';
+      case 'QuantityOnHand':
+        return row.QuantityOnHand || 0;
+      case 'AgingDays':
+        return row.AgingDays || 0;
+      default:
+        return '';
+    }
+  };
+
   const sortedData = [...data].sort((a, b) => {
-    const aVal = a[sortField];
-    const bVal = b[sortField];
+    const aVal = getSortValue(a, sortField);
+    const bVal = getSortValue(b, sortField);
     
     if (typeof aVal === 'number' && typeof bVal === 'number') {
       return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
@@ -49,31 +77,31 @@ export function DataTable({ data, title, onRowClick }: DataTableProps) {
 
   const getStatusBadgeClass = (status: string) => {
     switch (status) {
-      case 'Published': return 'status-live';
-      case 'Unpublished': return 'status-unlisted';
-      case 'Suppressed': return 'status-suppressed';
-      case 'Out of Stock': return 'status-pending';
+      case 'Live': return 'status-live';
+      case 'Ops Complete': return 'status-unlisted';
+      case 'Blocked': return 'status-suppressed';
+      case 'Processing': return 'status-pending';
       default: return '';
     }
   };
 
-  const SortIcon = ({ field }: { field: keyof InventoryItem }) => {
+  const SortIcon = ({ field }: { field: SortField }) => {
     if (sortField !== field) return null;
     return sortDirection === 'asc' 
       ? <ChevronUp className="w-4 h-4" />
       : <ChevronDown className="w-4 h-4" />;
   };
 
-  const columns: { key: keyof InventoryItem; label: string; sortable?: boolean }[] = [
-    { key: 'upc', label: 'UPC', sortable: true },
-    { key: 'title', label: 'Title', sortable: true },
-    { key: 'category', label: 'Category', sortable: true },
-    { key: 'condition', label: 'Condition', sortable: true },
-    { key: 'facility', label: 'Facility', sortable: true },
-    { key: 'quantity', label: 'Qty', sortable: true },
-    { key: 'agingDays', label: 'Aging', sortable: true },
-    { key: 'listingStatus', label: 'Status', sortable: true },
-    { key: 'riskLevel', label: 'Risk', sortable: true },
+  const columns: { key: SortField; label: string; sortable?: boolean }[] = [
+    { key: 'UPC', label: 'UPC', sortable: true },
+    { key: 'Title', label: 'Title', sortable: true },
+    { key: 'CategoryName', label: 'Category', sortable: true },
+    { key: 'Condition', label: 'Condition', sortable: true },
+    { key: 'FacilityName', label: 'Facility', sortable: true },
+    { key: 'QuantityOnHand', label: 'Qty', sortable: true },
+    { key: 'AgingDays', label: 'Aging', sortable: true },
+    { key: 'status', label: 'Status', sortable: true },
+    { key: 'risk', label: 'Risk', sortable: true },
   ];
 
   return (
@@ -107,36 +135,40 @@ export function DataTable({ data, title, onRowClick }: DataTableProps) {
             </tr>
           </thead>
           <tbody>
-            {sortedData.map((item) => (
-              <tr 
-                key={item.id}
-                className={cn(onRowClick && "cursor-pointer")}
-                onClick={() => onRowClick?.(item)}
-              >
-                <td className="font-mono text-xs">{item.upc}</td>
-                <td className="max-w-[200px] truncate" title={item.title}>{item.title}</td>
-                <td>{item.category}</td>
-                <td>{item.condition}</td>
-                <td>{item.facility}</td>
-                <td className="text-right">{item.quantity}</td>
-                <td className="text-right">{item.agingDays}d</td>
-                <td>
-                  <span className={cn("status-badge", getStatusBadgeClass(item.listingStatus))}>
-                    {item.listingStatus}
-                  </span>
-                </td>
-                <td>
-                  <span className={cn("risk-badge", getRiskBadgeClass(item.riskLevel))}>
-                    {item.riskLevel}
-                  </span>
-                </td>
-                <td>
-                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
-                    <ExternalLink className="w-4 h-4" />
-                  </Button>
-                </td>
-              </tr>
-            ))}
+            {sortedData.map((item, index) => {
+              const status = getInventoryStatus(item);
+              const risk = getRiskBucket(item);
+              return (
+                <tr 
+                  key={item.id || item.TRGID || item.UPC || index}
+                  className={cn(onRowClick && "cursor-pointer")}
+                  onClick={() => onRowClick?.(item)}
+                >
+                  <td className="font-mono text-xs">{item.UPC || '—'}</td>
+                  <td className="max-w-[200px] truncate" title={item.Title}>{item.Title || '—'}</td>
+                  <td>{item.CategoryName || '—'}</td>
+                  <td>{item.Condition || '—'}</td>
+                  <td>{item.FacilityName || '—'}</td>
+                  <td className="text-right">{item.QuantityOnHand ?? '—'}</td>
+                  <td className="text-right">{item.AgingDays != null ? `${item.AgingDays}d` : '—'}</td>
+                  <td>
+                    <span className={cn("status-badge", getStatusBadgeClass(status))}>
+                      {status}
+                    </span>
+                  </td>
+                  <td>
+                    <span className={cn("risk-badge", getRiskBadgeClass(risk))}>
+                      {risk}
+                    </span>
+                  </td>
+                  <td>
+                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                      <ExternalLink className="w-4 h-4" />
+                    </Button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
