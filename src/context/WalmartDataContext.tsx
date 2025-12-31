@@ -1,32 +1,41 @@
-import { createContext, useContext, useState } from 'react';
-import { WalmartListingRow } from '@/types/walmart';
+import { createContext, useContext, useState, ReactNode } from 'react';
+
+export type WalmartRow = Record<string, any>;
 
 interface WalmartDataContextType {
-  rows: WalmartListingRow[];
-  setRows: (rows: WalmartListingRow[]) => void;
-  lastUpdated?: Date;
+  rows: WalmartRow[];
+  setRows: (rows: WalmartRow[]) => void;
+  lastUpdated: Date | null;
 }
 
-const WalmartDataContext = createContext<WalmartDataContextType | null>(null);
+const WalmartDataContext = createContext<WalmartDataContextType | undefined>(undefined);
 
-export function WalmartDataProvider({ children }: { children: React.ReactNode }) {
-  const [rows, setRows] = useState<WalmartListingRow[]>([]);
-  const [lastUpdated, setLastUpdated] = useState<Date | undefined>();
+export function WalmartDataProvider({ children }: { children: ReactNode }) {
+  const [rows, setRows] = useState<WalmartRow[]>([]);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  const updateRows = (data: WalmartListingRow[]) => {
-    setRows(data);
+  const handleSetRows = (newRows: WalmartRow[]) => {
+    setRows(newRows);
     setLastUpdated(new Date());
   };
 
   return (
-    <WalmartDataContext.Provider value={{ rows, setRows: updateRows, lastUpdated }}>
+    <WalmartDataContext.Provider
+      value={{
+        rows,
+        setRows: handleSetRows,
+        lastUpdated,
+      }}
+    >
       {children}
     </WalmartDataContext.Provider>
   );
 }
 
 export function useWalmartData() {
-  const ctx = useContext(WalmartDataContext);
-  if (!ctx) throw new Error('useWalmartData must be used inside provider');
-  return ctx;
+  const context = useContext(WalmartDataContext);
+  if (!context) {
+    throw new Error('useWalmartData must be used within WalmartDataProvider');
+  }
+  return context;
 }
