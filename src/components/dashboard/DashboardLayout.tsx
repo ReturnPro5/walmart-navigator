@@ -30,7 +30,7 @@ export function DashboardLayout() {
 
   /**
    * APPLY FILTERS
-   * Listings snapshot only (no duplicates, no sales logic)
+   * Snapshot-only, listings logic
    */
   const filteredRows = useMemo(() => {
     let data: WalmartListingRow[] = rows;
@@ -75,7 +75,6 @@ export function DashboardLayout() {
 
   /**
    * TAB ROUTING
-   * Every tab receives the SAME filtered snapshot
    */
   const renderContent = () => {
     switch (activeTab) {
@@ -104,7 +103,7 @@ export function DashboardLayout() {
         {/* HEADER */}
         <header className="sticky top-0 z-40 bg-background/95 backdrop-blur border-b border-border">
           <div className="px-6 py-4 space-y-4">
-            {/* UPLOAD SNAPSHOT */}
+            {/* UPLOAD SNAPSHOT (ONLY PLACE IT EXISTS) */}
             <UploadPanel />
 
             {/* FILTERS */}
