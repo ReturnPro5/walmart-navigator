@@ -1,129 +1,59 @@
-import { useState, useMemo } from 'react';
-import { Sidebar } from './Sidebar';
-import { FilterBar, type FilterState } from './FilterBar';
-import { UploadPanel } from './UploadPanel';
+import { useEffect, useState } from "react";
+import { getAllRecords, getStats } from "@/lib/db";
 
-import { ExecutiveSnapshot } from './tabs/ExecutiveSnapshot';
-import { InventoryFunnel } from './tabs/InventoryFunnel';
-import { ListingHealth } from './tabs/ListingHealth';
-import { AgingRisk } from './tabs/AgingRisk';
-import { SalesPerformance } from './tabs/SalesPerformance';
-import { SKUDeepDive } from './tabs/SKUDeepDive';
+export default function Dashboard() {
+  const [rows, setRows] = useState<any[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
 
-import { cn } from '@/lib/utils';
-import { useWalmartData } from '@/context/WalmartDataContext';
-import { WalmartListingRow } from '@/types/walmart';
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      const stats = await getStats();
+      const data = await getAllRecords(500); // sample
+      setTotal(stats.total);
+      setRows(data);
+      setLoading(false);
+    })();
+  }, []);
 
-export function DashboardLayout() {
-  const [activeTab, setActiveTab] = useState('executive');
-
-  const [filters, setFilters] = useState<FilterState>({
-    fiscalWeeks: [],
-    facility: '',
-    category: '',
-    condition: '',
-    program: '',
-    listingStatus: '',
-  });
-
-  const { rows } = useWalmartData();
-
-  /**
-   * APPLY FILTERS
-   * Snapshot-only, listings logic
-   */
-  const filteredRows = useMemo(() => {
-    let data: WalmartListingRow[] = rows;
-
-    if (filters.facility) {
-      data = data.filter(r =>
-        r.Tag_Facility?.toLowerCase().includes(filters.facility.toLowerCase())
-      );
-    }
-
-    if (filters.category) {
-      data = data.filter(r => r.CategoryName === filters.category);
-    }
-
-    if (filters.program) {
-      data = data.filter(r => r.ProgramName === filters.program);
-    }
-
-    if (filters.condition) {
-      data = data.filter(r => r.Tag_FinalCondition === filters.condition);
-    }
-
-    if (filters.listingStatus) {
-      switch (filters.listingStatus) {
-        case 'Live':
-          data = data.filter(r => r.AvailableForSale && !r.LocationNotListable);
-          break;
-        case 'Blocked':
-          data = data.filter(r => r.LocationNotListable);
-          break;
-        case 'Ops Complete':
-          data = data.filter(r => r.OpsComplete && !r.AvailableForSale);
-          break;
-        case 'Processing':
-          data = data.filter(r => !r.OpsComplete);
-          break;
-      }
-    }
-
-    return data;
-  }, [rows, filters]);
-
-  /**
-   * TAB ROUTING
-   */
-  const renderContent = () => {
-    switch (activeTab) {
-      case 'executive':
-        return <ExecutiveSnapshot rows={filteredRows} />;
-      case 'funnel':
-        return <InventoryFunnel rows={filteredRows} />;
-      case 'health':
-        return <ListingHealth rows={filteredRows} />;
-      case 'aging':
-        return <AgingRisk rows={filteredRows} />;
-      case 'performance':
-        return <SalesPerformance rows={filteredRows} />;
-      case 'sku':
-        return <SKUDeepDive rows={filteredRows} />;
-      default:
-        return <ExecutiveSnapshot rows={filteredRows} />;
-    }
-  };
+  if (loading) {
+    return <div className="p-6">Loading inventory…</div>;
+  }
 
   return (
-    <div className="min-h-screen bg-background">
-      <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
+    <div className="p-6 space-y-4">
+      <h1 className="text-2xl font-bold">Inventory Dashboard</h1>
 
-      <main className={cn('ml-64 transition-all duration-300')}>
-        {/* HEADER */}
-        <header className="sticky top-0 z-40 bg-background/95 backdrop-blur border-b border-border">
-          <div className="px-6 py-4 space-y-4">
-            {/* UPLOAD SNAPSHOT (ONLY PLACE IT EXISTS) */}
-            <UploadPanel />
+      <div className="text-sm text-muted-foreground">
+        Total deduped TRGIDs:{" "}
+        <span className="font-semibold">{total.toLocaleString()}</span>
+      </div>
 
-            {/* FILTERS */}
-            <FilterBar filters={filters} onFilterChange={setFilters} />
-          </div>
-        </header>
+      <div className="overflow-auto border rounded">
+        <table className="min-w-full text-sm">
+          <thead className="bg-muted">
+            <tr>
+              <th className="px-3 py-2 text-left">TRGID</th>
+              <th className="px-3 py-2 text-left">Source File</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.key} className="border-t">
+                <td className="px-3 py-1 font-mono">{r.key}</td>
+                <td className="px-3 py-1 text-muted-foreground">
+                  {r.sourceFileId}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
-        {/* CONTENT */}
-        <div className="p-6">
-          {renderContent()}
-        </div>
-
-        {/* FOOTER */}
-        <footer className="px-6 py-4 border-t border-border text-center text-xs text-muted-foreground">
-          <p>Walmart US Listings Dashboard • Snapshot-based</p>
-          <p className="mt-1">
-            Upload replaces data • No duplicates • TRG-level granularity
-          </p>
-        </footer>
-      </main>
+      <div className="text-xs text-muted-foreground">
+        Showing first 500 records (sample)
+      </div>
     </div>
   );
 }
