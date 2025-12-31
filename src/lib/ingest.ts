@@ -1,5 +1,11 @@
 import Papa from "papaparse";
-import { countRecords, getDB, makeFileId, upsertFile, type RowRecord } from "./db";
+import {
+  countRecords,
+  getDB,
+  makeFileId,
+  upsertFile,
+  type RowRecord,
+} from "./db";
 
 export type IngestProgress =
   | { phase: "idle"; percent: 0 }
@@ -39,20 +45,22 @@ export async function ingestFile(
 
   const db = await getDB();
   const tx = db.transaction(["records", "files"], "readwrite");
+  const recordStore = tx.objectStore("records");
 
   let rowsSeen = 0;
   let rowsUpserted = 0;
-  let chunkCount = 0;
+  let bytesProcessed = 0;
+  const totalBytes = file.size;
 
   await new Promise<void>((resolve, reject) => {
     Papa.parse<RowRecord>(file, {
       header: true,
       skipEmptyLines: true,
       worker: true,
-      chunkSize: 1024 * 1024,
-      chunk: async (results, parser) => {
+      chunkSize: 1024 * 1024, // 1MB
+      chunk: (results, parser) => {
         try {
-          chunkCount++;
+          const ops: Promise<unknown>[] = [];
 
           for (const row of results.data) {
             rowsSeen++;
@@ -60,25 +68,32 @@ export async function ingestFile(
             const key = String(row[UNIQUE_KEY] ?? "").trim();
             if (!key) continue;
 
-            await tx.objectStore("records").put({
-              key,
-              payload: row,
-              sourceFileId: fileId,
-            });
+            ops.push(
+              recordStore.put({
+                key,
+                payload: row,
+                sourceFileId: fileId,
+              })
+            );
 
             rowsUpserted++;
           }
 
-          const pct = Math.min(99, Math.round((chunkCount / 50) * 100));
+          bytesProcessed += results.meta?.cursor ?? 0;
+
+          // Batch write per chunk
+          Promise.all(ops).catch(reject);
+
+          const percent = Math.min(
+            99,
+            Math.round((bytesProcessed / totalBytes) * 100)
+          );
+
           onProgress({
             phase: "parsing",
-            percent: pct,
+            percent,
             detail: `Rows processed: ${rowsSeen.toLocaleString()}`,
           });
-
-          if (chunkCount % 3 === 0) {
-            await new Promise((r) => setTimeout(r, 0));
-          }
         } catch (err) {
           parser.abort();
           reject(err);
