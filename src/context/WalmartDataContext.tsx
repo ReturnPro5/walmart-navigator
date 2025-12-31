@@ -1,85 +1,62 @@
 import { createContext, useContext, useState, ReactNode } from 'react';
-import * as XLSX from 'xlsx';
 
 export type WalmartRow = Record<string, any>;
 
-interface WalmartDataContextType {
+export interface UploadedFile {
+  id: string;
+  name: string;
   rows: WalmartRow[];
-  setRows: (rows: WalmartRow[]) => void;
-  loadFile: (file: File) => Promise<void>;
-  lastUpdated: Date | null;
+  uploadedAt: Date;
+}
+
+interface WalmartDataContextType {
+  files: UploadedFile[];
+  rows: WalmartRow[];
+  addFile: (file: UploadedFile) => void;
+  removeFile: (id: string) => void;
 }
 
 const WalmartDataContext = createContext<WalmartDataContextType | undefined>(undefined);
 
 export function WalmartDataProvider({ children }: { children: ReactNode }) {
+  const [files, setFiles] = useState<UploadedFile[]>([]);
   const [rows, setRows] = useState<WalmartRow[]>([]);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  const handleSetRows = (newRows: WalmartRow[]) => {
-    setRows(newRows);
-    setLastUpdated(new Date());
+  const rebuildRows = (fileList: UploadedFile[]) => {
+    const map = new Map<string, WalmartRow>();
+
+    // later files override earlier ones
+    fileList.forEach(file => {
+      file.rows.forEach(row => {
+        const key = row.TRGID;
+        if (key) {
+          map.set(key, row);
+        }
+      });
+    });
+
+    setRows(Array.from(map.values()));
   };
 
-  /**
-   * LOAD CSV OR EXCEL SNAPSHOT
-   * Replaces existing data completely
-   */
-  const loadFile = async (file: File): Promise<void> => {
-    const extension = file.name.split('.').pop()?.toLowerCase();
+  const addFile = (file: UploadedFile) => {
+    setFiles(prev => {
+      const updated = [...prev, file];
+      rebuildRows(updated);
+      return updated;
+    });
+  };
 
-    if (!extension) {
-      throw new Error('Invalid file');
-    }
-
-    if (extension === 'csv') {
-      const text = await file.text();
-      const [headerLine, ...lines] = text.split(/\r?\n/);
-
-      const headers = headerLine.split(',').map(h => h.trim());
-
-      const parsedRows: WalmartRow[] = lines
-        .filter(Boolean)
-        .map(line => {
-          const values = line.split(',');
-          const row: WalmartRow = {};
-          headers.forEach((h, i) => {
-            row[h] = values[i]?.trim() ?? null;
-          });
-          return row;
-        });
-
-      handleSetRows(parsedRows);
-      return;
-    }
-
-    if (extension === 'xlsx' || extension === 'xls') {
-      const buffer = await file.arrayBuffer();
-      const workbook = XLSX.read(buffer, { type: 'array' });
-
-      // FIRST SHEET ONLY (snapshot logic)
-      const sheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[sheetName];
-
-      const parsedRows = XLSX.utils.sheet_to_json<WalmartRow>(worksheet, {
-        defval: null,
-      });
-
-      handleSetRows(parsedRows);
-      return;
-    }
-
-    throw new Error('Unsupported file type');
+  const removeFile = (id: string) => {
+    setFiles(prev => {
+      const updated = prev.filter(f => f.id !== id);
+      rebuildRows(updated);
+      return updated;
+    });
   };
 
   return (
     <WalmartDataContext.Provider
-      value={{
-        rows,
-        setRows: handleSetRows,
-        loadFile,
-        lastUpdated,
-      }}
+      value={{ files, rows, addFile, removeFile }}
     >
       {children}
     </WalmartDataContext.Provider>
@@ -87,9 +64,9 @@ export function WalmartDataProvider({ children }: { children: ReactNode }) {
 }
 
 export function useWalmartData() {
-  const context = useContext(WalmartDataContext);
-  if (!context) {
+  const ctx = useContext(WalmartDataContext);
+  if (!ctx) {
     throw new Error('useWalmartData must be used within WalmartDataProvider');
   }
-  return context;
+  return ctx;
 }
