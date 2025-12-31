@@ -1,13 +1,13 @@
+// src/App.tsx
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import UploadsPage from "@/pages/Uploads";
+import UploadManager from "./components/UploadManager";
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/uploads" element={<UploadsPage />} />
-        <Route path="/" element={<Navigate to="/uploads" replace />} />
-        <Route path="*" element={<Navigate to="/uploads" replace />} />
+        <Route path="/" element={<UploadManager />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   );
