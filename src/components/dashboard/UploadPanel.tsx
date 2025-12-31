@@ -12,15 +12,17 @@ export function UploadPanel() {
   const [error, setError] = useState<string | null>(null);
 
   const handleClick = () => {
+    console.log('Upload button clicked');
     fileRef.current?.click();
   };
 
   const handleFile = async (file: File) => {
+    console.log('File selected:', file.name);
     try {
       setLoading(true);
       setError(null);
-
       const rows = await parseUpload(file);
+      console.log('Parsed rows:', rows.length);
       setRows(rows);
     } catch (e: any) {
       setError(e.message || 'Upload failed');
@@ -31,7 +33,7 @@ export function UploadPanel() {
 
   return (
     <div className="dashboard-card">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-3">
         <div>
           <h3 className="text-sm font-medium">Upload Listings Snapshot</h3>
           <p className="text-xs text-muted-foreground">
@@ -41,26 +43,20 @@ export function UploadPanel() {
         <FileSpreadsheet className="w-5 h-5 text-muted-foreground" />
       </div>
 
-      {/* Hidden input */}
       <input
         ref={fileRef}
         type="file"
         accept=".csv,.xlsx,.xls"
         className="hidden"
         onChange={(e) => {
-          if (e.target.files && e.target.files[0]) {
+          if (e.target.files?.[0]) {
             handleFile(e.target.files[0]);
-            e.target.value = ''; // allow re-upload same file
+            e.target.value = '';
           }
         }}
       />
 
-      {/* Visible button */}
-      <Button
-        onClick={handleClick}
-        disabled={loading}
-        className="w-full flex items-center gap-2"
-      >
+      <Button onClick={handleClick} disabled={loading} className="w-full flex gap-2">
         <Upload className="w-4 h-4" />
         {loading ? 'Processing…' : 'Upload CSV or Excel'}
       </Button>
@@ -72,7 +68,7 @@ export function UploadPanel() {
       )}
 
       {error && (
-        <div className="flex items-center gap-2 text-xs text-destructive mt-3">
+        <div className="flex items-center gap-2 text-xs text-destructive mt-2">
           <AlertTriangle className="w-4 h-4" />
           {error}
         </div>
