@@ -1,10 +1,10 @@
-import { createRoot } from 'react-dom/client';
-import App from './App';
-import './index.css';
-import { WalmartDataProvider } from '@/context/WalmartDataContext';
+// src/main.tsx
+import React from "react";
+import ReactDOM from "react-dom/client";
+import App from "./App";
 
-createRoot(document.getElementById('root')!).render(
-  <WalmartDataProvider>
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
     <App />
-  </WalmartDataProvider>
+  </React.StrictMode>
 );
