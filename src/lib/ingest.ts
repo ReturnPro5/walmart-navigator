@@ -3,80 +3,31 @@ import {
   countRecords,
   getDB,
   makeFileId,
-  nextOrderValue,
-  setFileStatus,
   upsertFile,
-  type FileMeta,
   type RowRecord,
 } from "./db";
 
 export type IngestProgress =
   | { phase: "idle"; percent: 0 }
-  | { phase: "reading"; percent: number; detail?: string }
   | { phase: "parsing"; percent: number; detail?: string }
   | { phase: "done"; percent: 100; detail?: string }
   | { phase: "error"; percent: number; detail: string };
 
 const UNIQUE_KEY = "TRGID";
 
-function idbRequest<T>(req: IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-async function writeChunk(
-  rows: RowRecord[],
-  fileId: string
-): Promise<{ seen: number; upserted: number }> {
-  const db = await getDB();
-  const tx = db.transaction(["records"], "readwrite");
-  const store = tx.objectStore("records");
-
-  let seen = 0;
-  let upserted = 0;
-
-  for (const row of rows) {
-    seen++;
-    const key = String((row as any)?.[UNIQUE_KEY] ?? "").trim();
-    if (!key) continue;
-
-    store.put({
-      key,
-      payload: row,
-      sourceFileId: fileId,
-    });
-
-    upserted++;
-  }
-
-  await new Promise<void>((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error);
-  });
-
-  return { seen, upserted };
-}
-
 export async function ingestFile(
   file: File,
   onProgress: (p: IngestProgress) => void
 ) {
-  const fileId = makeFileId(file);
-
   if (!file.name.toLowerCase().endsWith(".csv")) {
-    const msg = "Only CSV is supported for large inventory uploads.";
+    const msg = "Only CSV supported for large files.";
     onProgress({ phase: "error", percent: 0, detail: msg });
     throw new Error(msg);
   }
 
-  onProgress({ phase: "reading", percent: 1, detail: "Preparing upload…" });
+  const fileId = makeFileId(file);
 
-  const order = await nextOrderValue();
-
-  const meta: FileMeta = {
+  await upsertFile({
     id: fileId,
     originalName: file.name,
     displayName: file.name,
@@ -87,79 +38,80 @@ export async function ingestFile(
     rowsSeen: 0,
     rowsUpserted: 0,
     status: "processing",
-    order,
-  };
+  });
 
-  await upsertFile(meta);
+  const db = await getDB();
 
   let rowsSeen = 0;
   let rowsUpserted = 0;
-  let lastCursor = 0;
-  const totalBytes = file.size;
+  let bytesProcessed = 0;
 
-  try {
-    await new Promise<void>((resolve, reject) => {
-      Papa.parse<RowRecord>(file, {
-        header: true,
-        skipEmptyLines: true,
-        worker: true,
-        chunkSize: 1024 * 1024, // 1MB
-        chunk: async (results, parser) => {
-          try {
-            const { seen, upserted } = await writeChunk(
-              results.data,
-              fileId
-            );
+  await new Promise<void>((resolve, reject) => {
+    Papa.parse<RowRecord>(file, {
+      header: true,
+      skipEmptyLines: true,
+      worker: true,
+      chunkSize: 1024 * 1024,
+      chunk: async (results, parser) => {
+        try {
+          const tx = db.transaction("records", "readwrite");
+          const store = tx.objectStore("records");
 
-            rowsSeen += seen;
-            rowsUpserted += upserted;
+          for (const row of results.data) {
+            rowsSeen++;
+            const key = String(row[UNIQUE_KEY] ?? "").trim();
+            if (!key) continue;
 
-            const cursor = results.meta?.cursor ?? lastCursor;
-            lastCursor = cursor;
-
-            const percent = Math.min(
-              99,
-              Math.round((cursor / totalBytes) * 100)
-            );
-
-            onProgress({
-              phase: "parsing",
-              percent,
-              detail: `Rows processed: ${rowsSeen.toLocaleString()}`,
+            store.put({
+              key,
+              payload: row,
+              sourceFileId: fileId,
             });
 
-            // yield to UI thread
-            await new Promise((r) => setTimeout(r, 0));
-          } catch (err) {
-            parser.abort();
-            reject(err);
+            rowsUpserted++;
           }
-        },
-        complete: () => resolve(),
-        error: (err) => reject(err),
-      });
+
+          await tx.done;
+
+          bytesProcessed += results.meta?.cursor ?? 0;
+          const percent = Math.min(
+            99,
+            Math.round((bytesProcessed / file.size) * 100)
+          );
+
+          onProgress({
+            phase: "parsing",
+            percent,
+            detail: `${rowsSeen.toLocaleString()} rows`,
+          });
+        } catch (err) {
+          parser.abort();
+          reject(err);
+        }
+      },
+      complete: () => resolve(),
+      error: (err) => reject(err),
     });
+  });
 
-    await upsertFile({
-      ...meta,
-      rowsSeen,
-      rowsUpserted,
-      status: "ready",
-    });
+  await upsertFile({
+    id: fileId,
+    originalName: file.name,
+    displayName: file.name,
+    size: file.size,
+    type: file.type,
+    lastModified: file.lastModified,
+    uploadedAt: Date.now(),
+    rowsSeen,
+    rowsUpserted,
+    status: "ready",
+  });
 
-    const total = await countRecords();
+  const total = await countRecords();
 
-    onProgress({
-      phase: "done",
-      percent: 100,
-      detail: `Done. Total deduped TRGs: ${total.toLocaleString()}`,
-    });
-
-    return { fileId, rowsSeen, rowsUpserted, total };
-  } catch (e: any) {
-    const msg = e?.message ?? "Upload failed";
-    await setFileStatus(fileId, "error", msg);
-    onProgress({ phase: "error", percent: 0, detail: msg });
-    throw e;
-  }
+  onProgress({
+    phase: "done",
+    percent: 100,
+    detail: `Deduped TRGIDs: ${total.toLocaleString()}`,
+  });
 }
