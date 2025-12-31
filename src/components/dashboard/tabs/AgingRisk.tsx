@@ -2,158 +2,193 @@ import { BarChart } from '../charts/BarChart';
 import { HeatmapChart } from '../charts/HeatmapChart';
 import { ActionCard } from '../ActionCard';
 import { KPICard } from '../KPICard';
-import { agingBucketsData, categoryRiskData, actionRecommendations, riskDistributionData } from '@/lib/mockData';
-import { AlertTriangle, Clock, DollarSign, Package } from 'lucide-react';
 
-export function AgingRisk() {
-  const agingBarData = agingBucketsData.map(d => ({
-    name: d.range + ' days',
-    value: d.count,
+import { WalmartListingRow } from '@/types/walmart';
+import { getRiskBucket } from '@/utils/risk';
+import { daysBetween } from '@/utils/dates';
+
+import { AlertTriangle, Clock, Package } from 'lucide-react';
+
+interface AgingRiskProps {
+  rows: WalmartListingRow[];
+}
+
+export function AgingRisk({ rows }: AgingRiskProps) {
+  /* =========================
+     AGING CALCULATIONS
+     ========================= */
+  const agingBuckets = {
+    '0–30': 0,
+    '31–60': 0,
+    '61–90': 0,
+    '90+': 0,
+  };
+
+  rows.forEach(row => {
+    const days =
+      daysBetween(row.CheckedInOn, new Date().toISOString()) ?? 0;
+
+    if (days <= 30) agingBuckets['0–30']++;
+    else if (days <= 60) agingBuckets['31–60']++;
+    else if (days <= 90) agingBuckets['61–90']++;
+    else agingBuckets['90+']++;
+  });
+
+  const agingBarData = Object.entries(agingBuckets).map(([range, count]) => ({
+    name: `${range} days`,
+    value: count,
   }));
 
-  const totalItems = agingBucketsData.reduce((sum, d) => sum + d.count, 0);
-  const totalValue = agingBucketsData.reduce((sum, d) => sum + d.value, 0);
-  const aged90Plus = agingBucketsData.find(d => d.range === '90+');
-  const criticalCount = riskDistributionData.find(d => d.name === 'Critical')?.value || 0;
+  const totalItems = rows.length;
+  const aged90Plus = agingBuckets['90+'];
+
+  /* =========================
+     RISK DISTRIBUTION
+     ========================= */
+  const riskCounts = rows.reduce(
+    (acc, row) => {
+      const risk = getRiskBucket(row);
+      acc[risk] += 1;
+      return acc;
+    },
+    {
+      Low: 0,
+      Medium: 0,
+      High: 0,
+      Critical: 0,
+    } as Record<'Low' | 'Medium' | 'High' | 'Critical', number>
+  );
+
+  /* =========================
+     CATEGORY RISK HEATMAP
+     ========================= */
+  const categoryMap: Record<
+    string,
+    { low: number; medium: number; high: number; critical: number }
+  > = {};
+
+  rows.forEach(row => {
+    const category = row.CategoryName || 'Uncategorized';
+    const risk = getRiskBucket(row);
+
+    if (!categoryMap[category]) {
+      categoryMap[category] = { low: 0, medium: 0, high: 0, critical: 0 };
+    }
+
+    categoryMap[category][risk.toLowerCase() as 'low' | 'medium' | 'high' | 'critical']++;
+  });
+
+  const heatmapData = Object.entries(categoryMap).map(
+    ([category, values]) => ({
+      category,
+      low: values.low,
+      medium: values.medium,
+      high: values.high,
+      critical: values.critical,
+    })
+  );
+
+  /* =========================
+     ACTION RECOMMENDATIONS
+     ========================= */
+  const actionRecommendations = [
+    {
+      title: 'Push Ops Complete Items Live',
+      description: 'Ops-complete inventory not yet available for sale',
+      count: rows.filter(r => r.OpsComplete && !r.AvailableForSale).length,
+      action: 'List Items',
+      severity: 'medium',
+    },
+    {
+      title: 'Resolve Blocked Listings',
+      description: 'Items blocked from listing',
+      count: rows.filter(r => r.LocationNotListable).length,
+      action: 'Resolve Blockers',
+      severity: 'high',
+    },
+    {
+      title: 'Review Aged Inventory',
+      description: 'Inventory aged 90+ days',
+      count: aged90Plus,
+      action: 'Escalate / Liquidate',
+      severity: 'high',
+    },
+  ];
 
   return (
     <div className="space-y-6 animate-slide-up">
-      {/* Page Header */}
+      {/* Header */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Aging & Risk</h1>
-        <p className="text-muted-foreground">Identify inventory at risk and recommended actions</p>
+        <p className="text-muted-foreground">
+          Inventory aging and listing risk based on current-state snapshot
+        </p>
       </div>
 
-      {/* Risk Summary */}
+      {/* KPI Summary */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <KPICard
           value={totalItems}
           label="Total Inventory"
           format="number"
-          tooltip="Total items across all aging buckets"
         />
         <KPICard
-          value={totalValue}
-          label="Total Value at Risk"
-          format="currency"
-          tooltip="Combined value of all inventory"
-        />
-        <KPICard
-          value={aged90Plus?.count || 0}
+          value={aged90Plus}
           label="Aged 90+ Days"
           format="number"
-          delta={-8.2}
-          tooltip="Items that have been in inventory for over 90 days"
+          tooltip="Inventory aged over 90 days since check-in"
         />
         <KPICard
-          value={criticalCount}
-          label="Critical Risk"
+          value={riskCounts.High + riskCounts.Critical}
+          label="High / Critical Risk"
           format="number"
-          delta={-12.4}
-          tooltip="Items requiring immediate attention"
+        />
+        <KPICard
+          value={((riskCounts.High + riskCounts.Critical) / (totalItems || 1)) * 100}
+          label="Risk Rate"
+          format="percent"
         />
       </div>
 
-      {/* Risk Breakdown */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        {riskDistributionData.map((risk) => (
-          <RiskCard
-            key={risk.name}
-            level={risk.name as 'Low' | 'Medium' | 'High' | 'Critical'}
-            count={risk.value}
-            total={totalItems}
-          />
-        ))}
-      </div>
-
-      {/* Charts */}
+      {/* Aging + Heatmap */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <BarChart
           data={agingBarData}
           title="Aging Distribution"
           colorByValue
         />
-        <div className="dashboard-card">
-          <h3 className="text-sm font-medium text-muted-foreground mb-4">Value by Aging Bucket</h3>
-          <div className="space-y-4">
-            {agingBucketsData.map((bucket) => {
-              const percentage = (bucket.value / totalValue) * 100;
-              return (
-                <div key={bucket.range} className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span>{bucket.range} days</span>
-                    <span className="font-mono font-medium">
-                      ${bucket.value.toLocaleString()}
-                    </span>
-                  </div>
-                  <div className="w-full h-3 bg-muted rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-primary rounded-full transition-all"
-                      style={{ 
-                        width: `${percentage}%`,
-                        opacity: 1 - (agingBucketsData.indexOf(bucket) * 0.2)
-                      }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+        <HeatmapChart
+          data={heatmapData}
+          title="Risk by Category"
+        />
       </div>
 
-      {/* Category Risk Heatmap */}
-      <HeatmapChart
-        data={categoryRiskData}
-        title="Risk by Category"
-      />
-
-      {/* Action Recommendations */}
+      {/* Action + Logic */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <ActionCard
           actions={actionRecommendations}
           title="Recommended Actions"
         />
-        
         <div className="dashboard-card">
-          <h3 className="text-sm font-medium text-muted-foreground mb-4">Risk Scoring Logic</h3>
+          <h3 className="text-sm font-medium text-muted-foreground mb-4">
+            Risk Scoring Logic
+          </h3>
           <div className="space-y-4 text-sm">
-            <div className="p-3 rounded-lg bg-muted/30">
-              <div className="flex items-center gap-2 mb-2">
-                <Clock className="w-4 h-4 text-muted-foreground" />
-                <span className="font-medium">Aging Factor</span>
-              </div>
-              <p className="text-muted-foreground">
-                Items aged 60+ days receive elevated risk scores. 90+ days triggers critical status.
-              </p>
-            </div>
-            <div className="p-3 rounded-lg bg-muted/30">
-              <div className="flex items-center gap-2 mb-2">
-                <Package className="w-4 h-4 text-muted-foreground" />
-                <span className="font-medium">Listing Status</span>
-              </div>
-              <p className="text-muted-foreground">
-                Unlisted or suppressed items automatically increase risk level by one tier.
-              </p>
-            </div>
-            <div className="p-3 rounded-lg bg-muted/30">
-              <div className="flex items-center gap-2 mb-2">
-                <DollarSign className="w-4 h-4 text-muted-foreground" />
-                <span className="font-medium">Price Competitiveness</span>
-              </div>
-              <p className="text-muted-foreground">
-                Items priced 20%+ above market receive elevated risk due to lower sell probability.
-              </p>
-            </div>
-            <div className="p-3 rounded-lg bg-muted/30">
-              <div className="flex items-center gap-2 mb-2">
-                <AlertTriangle className="w-4 h-4 text-muted-foreground" />
-                <span className="font-medium">Performance</span>
-              </div>
-              <p className="text-muted-foreground">
-                Items with zero views/sales in 14+ days while live receive risk escalation.
-              </p>
-            </div>
+            <LogicItem
+              icon={<Clock className="w-4 h-4" />}
+              title="Aging"
+              description="Inventory aged over 60 days escalates risk. 90+ days is critical."
+            />
+            <LogicItem
+              icon={<Package className="w-4 h-4" />}
+              title="Listing Status"
+              description="Blocked or ops-complete-but-unlisted items are elevated to critical risk."
+            />
+            <LogicItem
+              icon={<AlertTriangle className="w-4 h-4" />}
+              title="Action Priority"
+              description="High and critical risk inventory should be addressed first."
+            />
           </div>
         </div>
       </div>
@@ -161,54 +196,26 @@ export function AgingRisk() {
   );
 }
 
-function RiskCard({ 
-  level, 
-  count, 
-  total 
-}: { 
-  level: 'Low' | 'Medium' | 'High' | 'Critical';
-  count: number;
-  total: number;
+/* =========================
+   SUPPORT COMPONENT
+   ========================= */
+
+function LogicItem({
+  icon,
+  title,
+  description,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
 }) {
-  const percentage = ((count / total) * 100).toFixed(1);
-  
-  const levelStyles = {
-    Low: {
-      bg: 'bg-risk-low/10',
-      border: 'border-risk-low/20',
-      text: 'text-risk-low',
-      icon: '✓',
-    },
-    Medium: {
-      bg: 'bg-risk-medium/10',
-      border: 'border-risk-medium/20',
-      text: 'text-risk-medium',
-      icon: '!',
-    },
-    High: {
-      bg: 'bg-risk-high/10',
-      border: 'border-risk-high/20',
-      text: 'text-risk-high',
-      icon: '!!',
-    },
-    Critical: {
-      bg: 'bg-risk-critical/10',
-      border: 'border-risk-critical/20',
-      text: 'text-risk-critical',
-      icon: '⚠',
-    },
-  };
-
-  const style = levelStyles[level];
-
   return (
-    <div className={`dashboard-card ${style.bg} border ${style.border}`}>
-      <div className="flex items-center justify-between mb-2">
-        <span className={`font-medium ${style.text}`}>{level} Risk</span>
-        <span className={`text-lg ${style.text}`}>{style.icon}</span>
+    <div className="p-3 rounded-lg bg-muted/30">
+      <div className="flex items-center gap-2 mb-2">
+        {icon}
+        <span className="font-medium">{title}</span>
       </div>
-      <div className="text-2xl font-bold">{count.toLocaleString()}</div>
-      <div className="text-sm text-muted-foreground">{percentage}% of inventory</div>
+      <p className="text-muted-foreground">{description}</p>
     </div>
   );
 }
