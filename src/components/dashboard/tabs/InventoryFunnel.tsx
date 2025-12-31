@@ -1,136 +1,132 @@
 import { FunnelChart } from '../charts/FunnelChart';
 import { BarChart } from '../charts/BarChart';
 import { KPICard } from '../KPICard';
-import { funnelData } from '@/lib/mockData';
-import { AlertTriangle, TrendingDown, Clock } from 'lucide-react';
 
-export function InventoryFunnel() {
-  // Calculate stage drop-offs
-  const dropOffs = funnelData.slice(0, -1).map((stage, index) => {
-    const nextStage = funnelData[index + 1];
-    const dropOff = stage.count - nextStage.count;
-    const dropOffPercent = ((dropOff / stage.count) * 100).toFixed(1);
-    return {
-      from: stage.stage,
-      to: nextStage.stage,
-      lost: dropOff,
-      percentage: dropOffPercent,
-    };
-  });
+import { WalmartListingRow } from '@/types/walmart';
 
-  const bottleneckData = dropOffs.map(d => ({
-    name: `${d.from} → ${d.to}`,
-    value: d.lost,
-  }));
+interface InventoryFunnelProps {
+  rows: WalmartListingRow[];
+}
 
-  // Calculate key metrics
-  const inboundToLive = ((funnelData[3].count / funnelData[0].count) * 100).toFixed(1);
-  const liveToSold = ((funnelData[4].count / funnelData[3].count) * 100).toFixed(1);
-  const totalDropOff = funnelData[0].count - funnelData[4].count;
+export function InventoryFunnel({ rows }: InventoryFunnelProps) {
+  /* =========================
+     STAGE COUNTS (CURRENT STATE)
+     ========================= */
+  const checkedIn = rows.filter(r => !!r.CheckedInOn).length;
+  const processing = rows.filter(r => !r.OpsComplete).length;
+  const opsComplete = rows.filter(r => r.OpsComplete).length;
+  const availableForSale = rows.filter(r => r.AvailableForSale).length;
+  const blocked = rows.filter(r => r.LocationNotListable).length;
+
+  const funnelData = [
+    {
+      stage: 'Checked In',
+      count: checkedIn,
+      percentage: checkedIn ? 100 : 0,
+    },
+    {
+      stage: 'Processing',
+      count: processing,
+      percentage: checkedIn ? ((processing / checkedIn) * 100).toFixed(1) : 0,
+    },
+    {
+      stage: 'Ops Complete',
+      count: opsComplete,
+      percentage: checkedIn ? ((opsComplete / checkedIn) * 100).toFixed(1) : 0,
+    },
+    {
+      stage: 'Available for Sale',
+      count: availableForSale,
+      percentage: checkedIn ? ((availableForSale / checkedIn) * 100).toFixed(1) : 0,
+    },
+    {
+      stage: 'Blocked',
+      count: blocked,
+      percentage: checkedIn ? ((blocked / checkedIn) * 100).toFixed(1) : 0,
+    },
+  ];
+
+  /* =========================
+     BOTTLENECK ANALYSIS
+     ========================= */
+  const bottleneckData = [
+    {
+      name: 'Processing → Ops Complete',
+      value: Math.max(processing - opsComplete, 0),
+    },
+    {
+      name: 'Ops Complete → Available',
+      value: Math.max(opsComplete - availableForSale, 0),
+    },
+    {
+      name: 'Available → Blocked',
+      value: blocked,
+    },
+  ];
+
+  /* =========================
+     KPI SUMMARY
+     ========================= */
+  const opsCompletionRate = checkedIn
+    ? ((opsComplete / checkedIn) * 100).toFixed(1)
+    : '0.0';
+
+  const availabilityRate = opsComplete
+    ? ((availableForSale / opsComplete) * 100).toFixed(1)
+    : '0.0';
 
   return (
     <div className="space-y-6 animate-slide-up">
-      {/* Page Header */}
+      {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Inventory → Listing Funnel</h1>
-        <p className="text-muted-foreground">Track where inventory gets stuck in the pipeline</p>
+        <h1 className="text-2xl font-bold tracking-tight">
+          Inventory → Listing Funnel
+        </h1>
+        <p className="text-muted-foreground">
+          Current-state view of inventory readiness and listability
+        </p>
       </div>
 
-      {/* Quick Metrics */}
+      {/* KPI Row */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <KPICard
-          value={funnelData[0].count}
-          label="Total Inbound"
+          value={checkedIn}
+          label="Checked In"
           format="number"
-          tooltip="Total items received in the selected period"
+          tooltip="Total items currently in inventory"
         />
         <KPICard
-          value={inboundToLive}
-          label="Inbound → Live Rate"
+          value={opsCompletionRate}
+          label="Ops Completion Rate"
           format="percent"
-          delta={2.3}
-          tooltip="Percentage of inbound items that become live listings"
+          tooltip="Percent of checked-in items with operations complete"
         />
         <KPICard
-          value={liveToSold}
-          label="Live → Sold Rate"
+          value={availabilityRate}
+          label="Available for Sale Rate"
           format="percent"
-          delta={-1.2}
-          tooltip="Conversion rate from live listings to sales"
+          tooltip="Percent of ops-complete items that are listable"
         />
         <KPICard
-          value={totalDropOff}
-          label="Total Drop-Off"
+          value={blocked}
+          label="Blocked Items"
           format="number"
-          delta={-4.5}
-          tooltip="Items lost through the funnel (not yet sold)"
+          tooltip="Items currently blocked from listing"
         />
       </div>
 
-      {/* Main Funnel */}
+      {/* Funnel + Bottlenecks */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <FunnelChart
           data={funnelData}
-          title="Lifecycle Funnel"
+          title="Lifecycle Funnel (Current State)"
         />
-        
         <BarChart
           data={bottleneckData}
-          title="Drop-Off by Stage"
+          title="Current Bottlenecks"
           horizontal
           colorByValue
         />
-      </div>
-
-      {/* Bottleneck Analysis */}
-      <div className="dashboard-card">
-        <h3 className="text-sm font-medium text-muted-foreground mb-4">Bottleneck Analysis</h3>
-        <div className="space-y-4">
-          {dropOffs.map((drop, index) => (
-            <div key={drop.from} className="flex items-center gap-4 p-4 rounded-lg bg-muted/30">
-              <div className="flex items-center justify-center w-10 h-10 rounded-full bg-background">
-                {index === 0 ? (
-                  <Clock className="w-5 h-5 text-muted-foreground" />
-                ) : index === dropOffs.length - 1 ? (
-                  <TrendingDown className="w-5 h-5 text-destructive" />
-                ) : (
-                  <AlertTriangle className="w-5 h-5 text-status-pending" />
-                )}
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-medium">{drop.from} → {drop.to}</span>
-                  <span className="text-sm font-mono text-muted-foreground">
-                    -{drop.lost.toLocaleString()} ({drop.percentage}%)
-                  </span>
-                </div>
-                <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-destructive/60 rounded-full"
-                    style={{ width: `${parseFloat(drop.percentage)}%` }}
-                  />
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Stage Details */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-        {funnelData.map((stage, index) => (
-          <div 
-            key={stage.stage}
-            className="dashboard-card text-center"
-            style={{ animationDelay: `${index * 100}ms` }}
-          >
-            <div className="text-2xl font-bold mb-1">{stage.count.toLocaleString()}</div>
-            <div className="text-sm font-medium text-muted-foreground mb-2">{stage.stage}</div>
-            <div className="text-xs text-muted-foreground">
-              {stage.percentage}% of inbound
-            </div>
-          </div>
-        ))}
       </div>
     </div>
   );
