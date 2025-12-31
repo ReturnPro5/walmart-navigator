@@ -1,14 +1,14 @@
 import { useState } from 'react';
-import {
-  LayoutDashboard,
-  GitBranch,
-  HeartPulse,
-  Clock,
-  TrendingUp,
+import { 
+  LayoutDashboard, 
+  GitBranch, 
+  HeartPulse, 
+  Clock, 
+  TrendingUp, 
   Search,
   Settings,
   ChevronLeft,
-  ChevronRight,
+  ChevronRight
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -36,25 +36,21 @@ export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
 
   return (
-    <aside
+    <aside 
       className={cn(
-        'fixed left-0 top-0 h-screen bg-sidebar flex flex-col transition-all duration-300 z-50',
-        collapsed ? 'w-16' : 'w-64'
+        "fixed left-0 top-0 h-screen bg-sidebar flex flex-col transition-all duration-300 z-50",
+        collapsed ? "w-16" : "w-64"
       )}
     >
       {/* Logo */}
       <div className="flex items-center gap-3 px-4 h-16 border-b border-sidebar-border">
-        <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+        <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
           <span className="text-primary-foreground font-bold text-sm">W</span>
         </div>
         {!collapsed && (
           <div className="flex flex-col">
-            <span className="text-sidebar-foreground font-semibold text-sm">
-              Walmart US
-            </span>
-            <span className="text-sidebar-foreground/60 text-xs">
-              Operations Dashboard
-            </span>
+            <span className="text-sidebar-foreground font-semibold text-sm">Walmart US</span>
+            <span className="text-sidebar-foreground/60 text-xs">Operations Dashboard</span>
           </div>
         )}
       </div>
@@ -67,9 +63,10 @@ export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
               key={item.id}
               onClick={() => onTabChange(item.id)}
               className={cn(
-                'nav-link w-full',
-                activeTab === item.id ? 'nav-link-active' : 'nav-link-inactive'
+                "nav-link w-full",
+                activeTab === item.id ? "nav-link-active" : "nav-link-inactive"
               )}
+              title={collapsed ? item.label : undefined}
             >
               {item.icon}
               {!collapsed && <span>{item.label}</span>}
@@ -78,7 +75,7 @@ export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
         </div>
       </nav>
 
-      {/* Bottom Actions (NO UPLOAD) */}
+      {/* Bottom Actions — ONLY SETTINGS */}
       <div className="px-2 py-4 border-t border-sidebar-border">
         <button className="nav-link nav-link-inactive w-full">
           <Settings className="w-5 h-5" />
@@ -89,7 +86,7 @@ export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
       {/* Collapse Toggle */}
       <button
         onClick={() => setCollapsed(!collapsed)}
-        className="absolute -right-3 top-20 w-6 h-6 rounded-full bg-card border border-border shadow-sm flex items-center justify-center"
+        className="absolute -right-3 top-20 w-6 h-6 rounded-full bg-card border border-border shadow-sm flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
       >
         {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
       </button>
