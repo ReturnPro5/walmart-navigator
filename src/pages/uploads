@@ -1,0 +1,325 @@
+import { useEffect, useMemo, useState } from "react";
+import { ingestFile, type IngestProgress } from "@/lib/ingest";
+import {
+  clearAll,
+  deleteFileAndItsData,
+  getPreviewKeys,
+  getSettings,
+  listFiles,
+  renameStoredFile,
+  setSettings,
+  type StoredFile,
+} from "@/lib/db";
+
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
+
+type Queued = {
+  id: string;
+  file: File;
+  displayName: string;
+  status: "queued" | "processing" | "done" | "error";
+  progress: IngestProgress;
+};
+
+function makeQueueId(file: File) {
+  return `${file.name}__${file.size}__${file.lastModified}__${Math.random().toString(16).slice(2)}`;
+}
+
+export default function UploadsPage() {
+  const [stored, setStored] = useState<StoredFile[]>([]);
+  const [settings, setLocalSettings] = useState<{ uniqueKeyField: string; latestDateField: string } | null>(null);
+
+  const [queue, setQueue] = useState<Queued[]>([]);
+  const [running, setRunning] = useState(false);
+
+  const [overall, setOverall] = useState<IngestProgress>({ phase: "idle", percent: 0 });
+  const [previewKeys, setPreviewKeys] = useState<any[]>([]);
+
+  const accept = useMemo(() => ".csv,.xlsx,.xls", []);
+
+  useEffect(() => {
+    (async () => {
+      const s = await getSettings();
+      setLocalSettings(s);
+      await refreshStored();
+    })();
+  }, []);
+
+  async function refreshStored() {
+    const f = await listFiles();
+    setStored(f);
+    const p = await getPreviewKeys(25);
+    setPreviewKeys(p);
+  }
+
+  function addToQueue(files: FileList | null) {
+    if (!files || files.length === 0) return;
+
+    const items: Queued[] = Array.from(files).map((file) => ({
+      id: makeQueueId(file),
+      file,
+      displayName: file.name,
+      status: "queued",
+      progress: { phase: "idle", percent: 0 },
+    }));
+
+    setQueue((q) => [...q, ...items]);
+  }
+
+  function removeFromQueue(id: string) {
+    if (running) return;
+    setQueue((q) => q.filter((x) => x.id !== id));
+  }
+
+  function renameInQueue(id: string, name: string) {
+    setQueue((q) => q.map((x) => (x.id === id ? { ...x, displayName: name } : x)));
+  }
+
+  async function handleSaveSettings() {
+    if (!settings) return;
+    await setSettings(settings);
+    await refreshStored();
+  }
+
+  async function startUpload() {
+    if (running) return;
+    if (queue.length === 0) return;
+
+    setRunning(true);
+    setOverall({ phase: "reading", percent: 0, detail: "Starting queue…" });
+
+    try {
+      // process in order, one at a time (safer for memory)
+      for (let i = 0; i < queue.length; i++) {
+        const item = queue[i];
+
+        setQueue((q) =>
+          q.map((x) =>
+            x.id === item.id ? { ...x, status: "processing", progress: { phase: "reading", percent: 0, detail: "Starting…" } } : x
+          )
+        );
+
+        const baseOverall = Math.round((i / queue.length) * 100);
+        setOverall({ phase: "reading", percent: baseOverall, detail: `Uploading ${i + 1} of ${queue.length}: ${item.displayName}` });
+
+        try {
+          await ingestFile(item.file, (p) => {
+            setQueue((q) => q.map((x) => (x.id === item.id ? { ...x, progress: p } : x)));
+
+            // overall = base + fraction of this file
+            const pct = Math.min(99, Math.round(baseOverall + (p.percent / 100) * (100 / queue.length)));
+            setOverall({ ...p, percent: pct, detail: `File ${i + 1}/${queue.length}: ${item.displayName} — ${p.detail ?? ""}` });
+          });
+
+          // After ingest, refresh stored list + mark done
+          await refreshStored();
+          setQueue((q) => q.map((x) => (x.id === item.id ? { ...x, status: "done", progress: { phase: "done", percent: 100 } } : x)));
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : "Upload failed";
+          setQueue((q) =>
+            q.map((x) => (x.id === item.id ? { ...x, status: "error", progress: { phase: "error", percent: 0, detail: msg } } : x))
+          );
+          // keep going to next file (don’t kill entire queue)
+        }
+      }
+
+      setOverall({ phase: "done", percent: 100, detail: "Queue complete." });
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  async function deleteStored(fileId: string) {
+    if (running) return;
+    await deleteFileAndItsData(fileId);
+    await refreshStored();
+  }
+
+  async function clearEverything() {
+    if (running) return;
+    await clearAll();
+    setQueue([]);
+    setOverall({ phase: "idle", percent: 0 });
+    await refreshStored();
+  }
+
+  async function renameStored(fileId: string, name: string) {
+    await renameStoredFile(fileId, name);
+    await refreshStored();
+  }
+
+  return (
+    <div className="p-6 max-w-6xl mx-auto space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Inventory Uploads (Append + Dedupe + Persist)</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Unique Key Field (dedupe key)</Label>
+              <Input
+                value={settings?.uniqueKeyField ?? ""}
+                onChange={(e) => setLocalSettings((s) => (s ? { ...s, uniqueKeyField: e.target.value } : s))}
+                placeholder="TRGID"
+                disabled={running}
+              />
+              <p className="text-sm text-muted-foreground">
+                This must exist in every file. Example: <span className="font-mono">TRGID</span>
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label>Latest Date Field (keep newest row)</Label>
+              <Input
+                value={settings?.latestDateField ?? ""}
+                onChange={(e) => setLocalSettings((s) => (s ? { ...s, latestDateField: e.target.value } : s))}
+                placeholder="Order Closed Date"
+                disabled={running}
+              />
+              <p className="text-sm text-muted-foreground">
+                If a key shows up multiple times, we keep the row with the most recent date in this column.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={handleSaveSettings} disabled={running || !settings}>
+              Save settings
+            </Button>
+            <Button variant="destructive" onClick={clearEverything} disabled={running}>
+              Clear ALL stored data
+            </Button>
+          </div>
+
+          <Separator />
+
+          <div className="space-y-2">
+            <Label>Add files to queue (CSV recommended)</Label>
+            <Input type="file" multiple accept={accept} disabled={running} onChange={(e) => addToQueue(e.target.files)} />
+            <p className="text-sm text-muted-foreground">
+              For full inventory uploads: use <b>CSV</b>. Large XLSX is blocked to prevent crashes.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <div>
+                <b>Overall:</b> {overall.phase} {overall.detail ? `— ${overall.detail}` : ""}
+              </div>
+              <div className="tabular-nums">{overall.percent}%</div>
+            </div>
+            <Progress value={overall.percent} />
+          </div>
+
+          <div className="flex gap-2">
+            <Button onClick={startUpload} disabled={running || queue.length === 0}>
+              Start upload
+            </Button>
+            <Button variant="secondary" onClick={() => !running && setQueue([])} disabled={running || queue.length === 0}>
+              Clear queue
+            </Button>
+          </div>
+
+          {queue.length > 0 ? (
+            <div className="space-y-3">
+              <div className="font-medium">Upload queue</div>
+              {queue.map((q) => (
+                <div key={q.id} className="border rounded-lg p-3 space-y-2">
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                    <div className="min-w-0 space-y-1">
+                      <div className="text-sm text-muted-foreground">Original: {q.file.name}</div>
+                      <div className="flex gap-2 items-center">
+                        <Input
+                          value={q.displayName}
+                          onChange={(e) => renameInQueue(q.id, e.target.value)}
+                          disabled={running}
+                        />
+                        <Button variant="destructive" onClick={() => removeFromQueue(q.id)} disabled={running}>
+                          Remove
+                        </Button>
+                      </div>
+                      <div className="text-sm">
+                        {(q.file.size / 1024 / 1024).toFixed(1)} MB • Status: <b>{q.status}</b>
+                      </div>
+                    </div>
+
+                    <div className="w-full md:w-96 space-y-1">
+                      <div className="flex items-center justify-between text-xs">
+                        <div>
+                          {q.progress.phase}
+                          {q.progress.detail ? ` — ${q.progress.detail}` : ""}
+                        </div>
+                        <div className="tabular-nums">{q.progress.percent}%</div>
+                      </div>
+                      <Progress value={q.progress.percent} />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Stored data (survives refresh)</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {stored.length === 0 ? (
+            <div className="text-sm text-muted-foreground">No stored uploads yet.</div>
+          ) : (
+            <div className="space-y-3">
+              {stored
+                .slice()
+                .sort((a, b) => b.uploadedAt - a.uploadedAt)
+                .map((f) => (
+                  <div key={f.id} className="border rounded-lg p-3 space-y-2">
+                    <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                      <div className="min-w-0 space-y-1">
+                        <div className="font-medium">{f.displayName}</div>
+                        <div className="text-sm text-muted-foreground">
+                          {f.originalName} • {(f.size / 1024 / 1024).toFixed(1)} MB • {new Date(f.uploadedAt).toLocaleString()}
+                        </div>
+                        <div className="text-sm">
+                          Rows seen: <b>{f.rowsSeen.toLocaleString()}</b> • Rows upserted: <b>{f.rowsUpserted.toLocaleString()}</b> • Status:{" "}
+                          <b>{f.status}</b>
+                        </div>
+                        {f.errorMessage ? <div className="text-sm text-destructive">{f.errorMessage}</div> : null}
+
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          <Input
+                            className="max-w-sm"
+                            defaultValue={f.displayName}
+                            onBlur={(e) => renameStored(f.id, e.target.value)}
+                            placeholder="Rename label…"
+                          />
+                          <Button variant="destructive" onClick={() => deleteStored(f.id)} disabled={running}>
+                            Delete (and remove its data)
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          )}
+
+          <Separator />
+
+          <div className="space-y-2">
+            <div className="font-medium">Deduped key preview (safe)</div>
+            <pre className="text-xs bg-muted rounded-lg p-3 overflow-auto max-h-64">
+              {JSON.stringify(previewKeys, null, 2)}
+            </pre>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
