@@ -1,88 +1,124 @@
 import { useState } from 'react';
 import * as XLSX from 'xlsx';
-import { Upload, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Upload, Trash2, Edit3, Check, X } from 'lucide-react';
 import { useWalmartData } from '@/context/WalmartDataContext';
 
 export function UploadPanel() {
-  const { setRows } = useWalmartData();
+  const { files, addFile, removeFile } = useWalmartData();
 
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [tempName, setTempName] = useState('');
 
-  const handleFile = async (file: File) => {
+  const handleUpload = async (file: File) => {
     setLoading(true);
-    setError(null);
-    setSuccess(false);
 
     try {
-      // 🚨 HARD SAFETY LIMIT
-      if (file.size > 15 * 1024 * 1024) {
-        throw new Error('File too large. Use CSV or split Excel.');
-      }
-
       const ext = file.name.split('.').pop()?.toLowerCase();
+      let rows: any[] = [];
 
       if (ext === 'csv') {
         const text = await file.text();
         const [header, ...lines] = text.split('\n');
-
         const keys = header.split(',').map(h => h.trim());
-        const rows = lines
+
+        rows = lines
           .filter(Boolean)
-          .map(line => {
-            const values = line.split(',');
-            return Object.fromEntries(
-              keys.map((k, i) => [k, values[i]])
-            );
-          });
-
-        setRows(rows);
+          .map(line =>
+            Object.fromEntries(
+              keys.map((k, i) => [k, line.split(',')[i]])
+            )
+          );
       }
 
-      else if (ext === 'xlsx' || ext === 'xls') {
+      if (ext === 'xlsx' || ext === 'xls') {
+        if (file.size > 15 * 1024 * 1024) {
+          throw new Error('Excel file too large — convert to CSV');
+        }
+
         const buffer = await file.arrayBuffer();
-        const workbook = XLSX.read(buffer, { type: 'array' });
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const json = XLSX.utils.sheet_to_json(sheet, { defval: null });
-        setRows(json as any[]);
+        const wb = XLSX.read(buffer, { type: 'array' });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        rows = XLSX.utils.sheet_to_json(sheet, { defval: null });
       }
 
-      else {
-        throw new Error('Unsupported file type');
-      }
-
-      setSuccess(true);
-    } catch (e: any) {
-      setError(e.message);
+      addFile({
+        id: crypto.randomUUID(),
+        name: file.name,
+        rows,
+        uploadedAt: new Date(),
+      });
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="dashboard-card">
+    <div className="dashboard-card space-y-4">
+      {/* Upload */}
       <label className="inline-flex items-center gap-2 cursor-pointer">
         <Upload className="w-4 h-4" />
-        <span>{loading ? 'Loading…' : 'Upload Snapshot'}</span>
+        <span>{loading ? 'Uploading…' : 'Upload File'}</span>
         <input
           type="file"
           accept=".csv,.xlsx,.xls"
           className="hidden"
           disabled={loading}
-          onChange={e => e.target.files && handleFile(e.target.files[0])}
+          onChange={e => e.target.files && handleUpload(e.target.files[0])}
         />
       </label>
 
-      {error && (
-        <div className="text-destructive text-sm mt-2 flex gap-1">
-          <AlertTriangle className="w-4 h-4" /> {error}
-        </div>
-      )}
+      {/* File List */}
+      {files.length > 0 && (
+        <div className="space-y-2">
+          {files.map(file => (
+            <div
+              key={file.id}
+              className="flex items-center justify-between text-sm border rounded px-3 py-2"
+            >
+              {editingId === file.id ? (
+                <input
+                  className="border px-1 text-sm"
+                  value={tempName}
+                  onChange={e => setTempName(e.target.value)}
+                />
+              ) : (
+                <span>{file.name}</span>
+              )}
 
-      {success && !loading && (
-        <div className="text-green-600 text-sm mt-2 flex gap-1">
-          <CheckCircle className="w-4 h-4" /> Loaded successfully
+              <div className="flex gap-2">
+                {editingId === file.id ? (
+                  <>
+                    <button
+                      onClick={() => {
+                        file.name = tempName;
+                        setEditingId(null);
+                      }}
+                    >
+                      <Check className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => setEditingId(null)}>
+                      <X className="w-4 h-4" />
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => {
+                        setEditingId(file.id);
+                        setTempName(file.name);
+                      }}
+                    >
+                      <Edit3 className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => removeFile(file.id)}>
+                      <Trash2 className="w-4 h-4 text-destructive" />
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>
