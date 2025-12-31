@@ -2,95 +2,147 @@ import { DonutChart } from '../charts/DonutChart';
 import { BarChart } from '../charts/BarChart';
 import { DataTable } from '../DataTable';
 import { KPICard } from '../KPICard';
-import { inventoryStatusData, suppressionReasonsData, sampleInventoryItems } from '@/lib/mockData';
+
+import { WalmartListingRow } from '@/types/walmart';
+import { getInventoryStatus } from '@/utils/status';
+import { getRiskBucket } from '@/utils/risk';
+
 import { AlertCircle, CheckCircle, XCircle, Clock } from 'lucide-react';
 
-export function ListingHealth() {
-  const published = inventoryStatusData.find(d => d.name === 'Live')?.value || 0;
-  const unpublished = inventoryStatusData.find(d => d.name === 'Unlisted')?.value || 0;
-  const suppressed = inventoryStatusData.find(d => d.name === 'Suppressed')?.value || 0;
-  const total = inventoryStatusData.reduce((sum, d) => sum + d.value, 0);
+interface ListingHealthProps {
+  rows: WalmartListingRow[];
+}
 
-  const publishedRate = ((published / total) * 100).toFixed(1);
-  const suppressedRate = ((suppressed / total) * 100).toFixed(1);
+export function ListingHealth({ rows }: ListingHealthProps) {
+  /* =========================
+     STATUS COUNTS
+     ========================= */
+  const statusCounts = rows.reduce(
+    (acc, row) => {
+      const status = getInventoryStatus(row);
+      acc[status] += 1;
+      return acc;
+    },
+    {
+      Live: 0,
+      Blocked: 0,
+      'Ops Complete': 0,
+      Processing: 0,
+    } as Record<string, number>
+  );
 
-  const suppressionBarData = suppressionReasonsData.map(d => ({
-    name: d.reason,
-    value: d.count,
-  }));
+  const total = rows.length;
 
-  const suppressedItems = sampleInventoryItems.filter(i => i.listingStatus === 'Suppressed');
+  const published = statusCounts.Live;
+  const unpublished = statusCounts['Ops Complete'] + statusCounts.Processing;
+  const suppressed = statusCounts.Blocked;
 
-  // Pricing buckets (mock)
-  const pricingData = [
-    { name: 'Competitive', value: 14200, color: 'hsl(142, 76%, 36%)' },
-    { name: 'Slightly High', value: 4800, color: 'hsl(45, 93%, 47%)' },
-    { name: 'Overpriced', value: 2100, color: 'hsl(25, 95%, 53%)' },
-    { name: 'Severely Overpriced', value: 890, color: 'hsl(0, 84%, 60%)' },
+  const publishedRate = total ? ((published / total) * 100).toFixed(1) : '0.0';
+
+  /* =========================
+     DONUT DATA
+     ========================= */
+  const inventoryStatusData = [
+    { name: 'Live', value: statusCounts.Live, color: 'hsl(142, 76%, 36%)' },
+    { name: 'Ops Complete', value: statusCounts['Ops Complete'], color: 'hsl(45, 93%, 47%)' },
+    { name: 'Processing', value: statusCounts.Processing, color: 'hsl(217, 91%, 60%)' },
+    { name: 'Blocked', value: statusCounts.Blocked, color: 'hsl(0, 84%, 60%)' },
   ];
+
+  /* =========================
+     RISK → ACTION BAR
+     ========================= */
+  const riskActionCounts = rows.reduce(
+    (acc, row) => {
+      const risk = getRiskBucket(row);
+      acc[risk] += 1;
+      return acc;
+    },
+    {
+      Low: 0,
+      Medium: 0,
+      High: 0,
+      Critical: 0,
+    } as Record<string, number>
+  );
+
+  const suppressionBarData = [
+    { name: 'Low Risk', value: riskActionCounts.Low },
+    { name: 'Medium Risk', value: riskActionCounts.Medium },
+    { name: 'High Risk', value: riskActionCounts.High },
+    { name: 'Critical Risk', value: riskActionCounts.Critical },
+  ];
+
+  /* =========================
+     ISSUE TABLE
+     ========================= */
+  const issueRows = rows.filter(row => {
+    const status = getInventoryStatus(row);
+    const risk = getRiskBucket(row);
+    return (
+      status === 'Blocked' ||
+      status === 'Ops Complete' ||
+      risk === 'High' ||
+      risk === 'Critical'
+    );
+  });
 
   return (
     <div className="space-y-6 animate-slide-up">
-      {/* Page Header */}
+      {/* Header */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Listing Health</h1>
-        <p className="text-muted-foreground">Are our listings healthy? Monitor publishing status and issues.</p>
+        <p className="text-muted-foreground">
+          Publishing readiness and listing issues across Walmart US inventory
+        </p>
       </div>
 
-      {/* Health Status Cards */}
+      {/* Status Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <HealthStatusCard
           icon={<CheckCircle className="w-5 h-5" />}
-          label="Published"
+          label="Live"
           value={published}
           total={total}
           status="good"
         />
         <HealthStatusCard
           icon={<Clock className="w-5 h-5" />}
-          label="Unpublished"
+          label="Not Yet Live"
           value={unpublished}
           total={total}
           status="warning"
         />
         <HealthStatusCard
           icon={<XCircle className="w-5 h-5" />}
-          label="Suppressed"
+          label="Blocked"
           value={suppressed}
           total={total}
           status="critical"
         />
         <KPICard
-          value={publishedRate}
-          label="Health Rate"
+          value={Number(publishedRate)}
+          label="Publish Rate"
           format="percent"
-          delta={1.8}
-          tooltip="Percentage of inventory that is successfully published"
+          tooltip="Percent of inventory currently live on Walmart"
         />
       </div>
 
-      {/* Charts Row */}
+      {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <DonutChart
           data={inventoryStatusData}
           title="Listing Status Breakdown"
           centerValue={total}
-          centerLabel="Total Listings"
+          centerLabel="Total Items"
         />
         <BarChart
           data={suppressionBarData}
-          title="Suppression Reasons"
+          title="Risk Distribution (Action Required)"
           horizontal
+          colorByValue
         />
       </div>
-
-      {/* Pricing Competitiveness */}
-      <DonutChart
-        data={pricingData}
-        title="Price Competitiveness"
-        centerValue={pricingData.reduce((sum, d) => sum + d.value, 0)}
-        centerLabel="Priced Items"
-      />
 
       {/* Issues Table */}
       <div className="dashboard-card">
@@ -98,37 +150,30 @@ export function ListingHealth() {
           <AlertCircle className="w-5 h-5 text-destructive" />
           <h3 className="text-sm font-medium">Items Requiring Attention</h3>
           <span className="text-xs text-muted-foreground ml-auto">
-            Showing suppressed and problematic listings
+            Blocked, unlisted, or high-risk items
           </span>
         </div>
-        <DataTable 
-          data={sampleInventoryItems.filter(i => 
-            i.listingStatus === 'Suppressed' || 
-            i.listingStatus === 'Unpublished' ||
-            i.riskLevel === 'High' ||
-            i.riskLevel === 'Critical'
-          )}
-        />
+        <DataTable data={issueRows} />
       </div>
 
-      {/* Quick Actions */}
+      {/* Action Summary */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <ActionSummaryCard
-          title="Missing Images"
-          count={542}
-          action="Add product images"
+          title="Blocked Listings"
+          count={statusCounts.Blocked}
+          action="Resolve listability or compliance issues"
           severity="high"
         />
         <ActionSummaryCard
-          title="Missing Attributes"
-          count={389}
-          action="Complete required fields"
+          title="Ops Complete, Not Live"
+          count={statusCounts['Ops Complete']}
+          action="Push to listing"
           severity="medium"
         />
         <ActionSummaryCard
-          title="Price Issues"
-          count={421}
-          action="Review and adjust pricing"
+          title="High / Critical Risk"
+          count={riskActionCounts.High + riskActionCounts.Critical}
+          action="Review aging and take action"
           severity="medium"
         />
       </div>
@@ -136,21 +181,25 @@ export function ListingHealth() {
   );
 }
 
-function HealthStatusCard({ 
-  icon, 
-  label, 
-  value, 
+/* =========================
+   SUPPORTING COMPONENTS
+   ========================= */
+
+function HealthStatusCard({
+  icon,
+  label,
+  value,
   total,
-  status 
-}: { 
+  status,
+}: {
   icon: React.ReactNode;
-  label: string; 
+  label: string;
   value: number;
   total: number;
   status: 'good' | 'warning' | 'critical';
 }) {
-  const percentage = ((value / total) * 100).toFixed(1);
-  
+  const percentage = total ? ((value / total) * 100).toFixed(1) : '0.0';
+
   const statusColors = {
     good: 'text-status-live bg-status-live/10',
     warning: 'text-status-pending bg-status-pending/10',
@@ -164,7 +213,9 @@ function HealthStatusCard({
       </div>
       <div className="text-2xl font-bold">{value.toLocaleString()}</div>
       <div className="text-sm text-muted-foreground">{label}</div>
-      <div className="text-xs text-muted-foreground mt-1">{percentage}% of total</div>
+      <div className="text-xs text-muted-foreground mt-1">
+        {percentage}% of total
+      </div>
     </div>
   );
 }
