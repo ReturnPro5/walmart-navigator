@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useAuth } from '@/context/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import { 
   LayoutDashboard, 
   GitBranch, 
@@ -7,6 +9,8 @@ import {
   TrendingUp, 
   Search,
   Settings,
+  Shield,
+  LogOut,
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
@@ -16,6 +20,7 @@ interface NavItem {
   id: string;
   label: string;
   icon: React.ReactNode;
+  adminOnly?: boolean;
 }
 
 const navItems: NavItem[] = [
@@ -25,6 +30,7 @@ const navItems: NavItem[] = [
   { id: 'aging', label: 'Aging & Risk', icon: <Clock className="w-5 h-5" /> },
   { id: 'performance', label: 'Sales Performance', icon: <TrendingUp className="w-5 h-5" /> },
   { id: 'sku', label: 'SKU Deep Dive', icon: <Search className="w-5 h-5" /> },
+  { id: 'admin', label: 'Admin', icon: <Shield className="w-5 h-5" />, adminOnly: true },
 ];
 
 interface SidebarProps {
@@ -34,6 +40,23 @@ interface SidebarProps {
 
 export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
+  const visibleItems = navItems.filter(item => !item.adminOnly || user?.isAdmin);
+
+  function handleTabClick(id: string) {
+    if (id === 'admin') {
+      navigate('/admin');
+    } else {
+      onTabChange(id);
+    }
+  }
+
+  async function handleLogout() {
+    await logout();
+    navigate('/login');
+  }
 
   return (
     <aside 
@@ -58,10 +81,10 @@ export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
       {/* Navigation */}
       <nav className="flex-1 px-2 py-4 overflow-y-auto">
         <div className="space-y-1">
-          {navItems.map((item) => (
+          {visibleItems.map((item) => (
             <button
               key={item.id}
-              onClick={() => onTabChange(item.id)}
+              onClick={() => handleTabClick(item.id)}
               className={cn(
                 "nav-link w-full",
                 activeTab === item.id ? "nav-link-active" : "nav-link-inactive"
@@ -75,11 +98,17 @@ export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
         </div>
       </nav>
 
-      {/* Bottom Actions — ONLY SETTINGS */}
-      <div className="px-2 py-4 border-t border-sidebar-border">
-        <button className="nav-link nav-link-inactive w-full">
-          <Settings className="w-5 h-5" />
-          {!collapsed && <span>Settings</span>}
+      {/* Bottom — user info + logout */}
+      <div className="px-2 py-4 border-t border-sidebar-border space-y-2">
+        {!collapsed && user && (
+          <div className="px-3 py-2">
+            <div className="text-xs text-sidebar-foreground/60 truncate">{user.email}</div>
+            <div className="text-xs text-sidebar-foreground/40 capitalize">{user.role.replace('_', ' ')}</div>
+          </div>
+        )}
+        <button onClick={handleLogout} className="nav-link nav-link-inactive w-full">
+          <LogOut className="w-5 h-5" />
+          {!collapsed && <span>Sign Out</span>}
         </button>
       </div>
 

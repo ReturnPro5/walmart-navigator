@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { saveFileToDB, deleteFileFromDB, getAllFilesFromDB } from '@/lib/db';
+import { listFiles, deleteFileAndRecords, getSampleRecords, type FileMeta } from '@/lib/db';
 
 export type WalmartRow = Record<string, any>;
 
@@ -13,7 +13,6 @@ export interface UploadedFile {
 interface WalmartDataContextType {
   files: UploadedFile[];
   rows: WalmartRow[];
-  addFile: (file: UploadedFile) => Promise<void>;
   removeFile: (id: string) => Promise<void>;
 }
 
@@ -23,40 +22,22 @@ export function WalmartDataProvider({ children }: { children: ReactNode }) {
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [rows, setRows] = useState<WalmartRow[]>([]);
 
-  const rebuildRows = (fileList: UploadedFile[]) => {
-    const map = new Map<string, WalmartRow>();
-    fileList.forEach(file =>
-      file.rows.forEach(row => {
-        if (row.TRGID) map.set(row.TRGID, row);
-      })
-    );
-    setRows(Array.from(map.values()));
-  };
+  async function refresh() {
+    const stored = await listFiles();
+    setFiles(stored.map(f => ({ id: f.id, name: f.displayName, rows: [], uploadedAt: String(f.uploadedAt) })));
+    const records = await getSampleRecords(1000);
+    setRows(records.map(r => r.payload as WalmartRow));
+  }
 
-  // LOAD FROM INDEXEDDB
-  useEffect(() => {
-    getAllFilesFromDB().then((stored) => {
-      setFiles(stored);
-      rebuildRows(stored);
-    });
-  }, []);
-
-  const addFile = async (file: UploadedFile) => {
-    await saveFileToDB(file);
-    const updated = [...files, file];
-    setFiles(updated);
-    rebuildRows(updated);
-  };
+  useEffect(() => { refresh(); }, []);
 
   const removeFile = async (id: string) => {
-    await deleteFileFromDB(id);
-    const updated = files.filter(f => f.id !== id);
-    setFiles(updated);
-    rebuildRows(updated);
+    await deleteFileAndRecords(id);
+    await refresh();
   };
 
   return (
-    <WalmartDataContext.Provider value={{ files, rows, addFile, removeFile }}>
+    <WalmartDataContext.Provider value={{ files, rows, removeFile }}>
       {children}
     </WalmartDataContext.Provider>
   );

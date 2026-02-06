@@ -1,5 +1,4 @@
 import Papa from 'papaparse';
-import * as XLSX from 'xlsx';
 
 export async function parseUpload(file: File): Promise<Record<string, any>[]> {
   const ext = file.name.split('.').pop()?.toLowerCase();
@@ -15,12 +14,5 @@ export async function parseUpload(file: File): Promise<Record<string, any>[]> {
     });
   }
 
-  if (ext === 'xlsx' || ext === 'xls') {
-    const buffer = await file.arrayBuffer();
-    const workbook = XLSX.read(buffer);
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    return XLSX.utils.sheet_to_json(sheet);
-  }
-
-  throw new Error('Unsupported file type');
+  throw new Error('Only CSV files are supported');
 }

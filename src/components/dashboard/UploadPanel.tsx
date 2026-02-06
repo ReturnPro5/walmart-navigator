@@ -1,6 +1,5 @@
-// src/components/dashboard/UploadPanel.tsx
 import { useRef, useState } from "react";
-import { ingestCSV } from "@/lib/ingest";
+import { ingestFile } from "@/lib/ingest";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 
@@ -16,9 +15,9 @@ export function UploadPanel() {
       setProgress(1);
       setStatus(`Uploading ${file.name}…`);
 
-      await ingestCSV(file, (pct, label) => {
-        setProgress(pct);
-        setStatus(label);
+      await ingestFile(file, (p) => {
+        setProgress(p.percent);
+        setStatus("detail" in p ? (p as any).detail ?? "" : `${p.phase}…`);
       });
     }
 
