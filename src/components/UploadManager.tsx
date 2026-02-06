@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ingestFile, type IngestProgress } from "@/lib/ingest";
-import { getFiles, countRecords } from "@/lib/db";
+import { countRecords } from "@/lib/db";
 
 export default function Upload() {
   const [queue, setQueue] = useState<File[]>([]);
@@ -46,7 +46,7 @@ export default function Upload() {
         return (
           <div key={f.name}>
             {f.name} — {p?.percent ?? 0}%
-            {p?.detail && <span> ({p.detail})</span>}
+            {"detail" in (p ?? {}) && <span> ({(p as any).detail})</span>}
           </div>
         );
       })}

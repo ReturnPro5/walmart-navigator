@@ -1,7 +1,7 @@
 // src/components/dashboard/DashboardLayout.tsx
 import { useEffect, useMemo, useState } from "react";
 import { countRecords, getSampleRecords, listFiles, renameFile, deleteFileAndRecords, type FileMeta } from "@/lib/db";
-import FileUploader from "./FileUploader";
+import { UploadPanel } from "./UploadPanel";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -53,7 +53,7 @@ export default function DashboardLayout() {
           <CardTitle>Upload Inventory CSVs</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <FileUploader onFinished={refresh} />
+          <UploadPanel />
           <div className="text-sm text-muted-foreground">
             Files stored: <b>{files.length}</b> (ready: <b>{readyCount}</b>) • Total deduped TRGIDs:{" "}
             <b>{total.toLocaleString()}</b>
